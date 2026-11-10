@@ -29,7 +29,37 @@ enum LoginFields: Hashable {
 final class Login: NSObject {
     static let instance = Login()
     
-    public var vaultURL: String = "https://vault.bitwarden.com" {
+    public var selectedRegion: String = UserDefaults.standard.string(forKey: "CW_SelectedRegion") ?? "eu" {
+        didSet {
+            UserDefaults.standard.set(selectedRegion, forKey: "CW_SelectedRegion")
+            applyRegion(selectedRegion)
+        }
+    }
+
+    public func applyRegion(_ region: String) {
+        if region == "eu" {
+            vaultURL = "https://vault.bitwarden.eu"
+            _mainURL = "https://vault.bitwarden.eu"
+            _apiURL = "https://api.bitwarden.eu"
+            iconURL = "https://icons.bitwarden.net"
+            _wssURL = "wss://notifications.bitwarden.eu"
+        } else if region == "com" {
+            vaultURL = "https://vault.bitwarden.com"
+            _mainURL = "https://vault.bitwarden.com"
+            _apiURL = "https://api.bitwarden.com"
+            iconURL = "https://icons.bitwarden.net"
+            _wssURL = "wss://notifications.bitwarden.com"
+        }
+    }
+
+    override init() {
+        super.init()
+        let reg = UserDefaults.standard.string(forKey: "CW_SelectedRegion") ?? "eu"
+        self.selectedRegion = reg
+        self.applyRegion(reg)
+    }
+
+    public var vaultURL: String = "https://vault.bitwarden.eu" {
         didSet {
             if (!mainChanged && selectedTab == 1) {
                 _mainURL = vaultURL
@@ -269,18 +299,17 @@ struct LoginView: View {
                 .tabViewStyle(.automatic)
                 .onChange(of: data.selectedTab) { _, newTab in
                     if newTab == 0 {
-                        data.vaultURL = "https://vault.bitwarden.com"
-                        data._mainURL = "https://bitwarden.com"
-                        data._apiURL = "https://api.bitwarden.com"
-                        data._wssURL = "wss://vault.bitwarden.com"
+                        data.applyRegion(data.selectedRegion)
                         data.mainChanged = true
                         data.apiChanged = true
                         data.wssChanged = true
                     } else if newTab == 1 {
-                        data.vaultURL = "https://someVault.com"
-                        data._mainURL = "https://someVault.com"
-                        data._apiURL = "https://someVault.com"
-                        data._wssURL = "wss://someVault.com/notifications"
+                        if data.vaultURL.contains("bitwarden.") {
+                            data.vaultURL = "https://someVault.com"
+                            data._mainURL = "https://someVault.com"
+                            data._apiURL = "https://someVault.com"
+                            data._wssURL = "wss://someVault.com/notifications"
+                        }
                         data.mainChanged = false
                         data.apiChanged = false
                         data.wssChanged = false
@@ -304,6 +333,13 @@ struct LoginView: View {
                 if (data.ViewType == LoginViewType.Login) {
                     Text("Clientwarden")
                         .font(.largeTitle.bold())
+                    Picker("Server", selection: $data.selectedRegion) {
+                        Text("EU (.eu)").tag("eu")
+                        Text("US (.com)").tag("com")
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 200)
+                    .padding(.bottom, 6)
                     TextField("Email", text: $data.email)
                         .font(.subheadline)
                         .padding(6)
