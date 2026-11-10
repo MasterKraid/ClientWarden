@@ -1,5 +1,8 @@
 #include "Vault.h"
 #include "UIBridge/CBridge.h"
+#include <unordered_set>
+#include <thread>
+#include <mutex>
 
 /*
  * The code is a bit messier since I had to fix race conditions
@@ -540,10 +543,16 @@ namespace ClientWarden {
                 */
                 if (token.value()["error_description"] == "Two factor required." && token.value().contains("TwoFactorProviders") && 
                     !token.value()["TwoFactorProviders"].empty()) {
-                    if (token.value()["TwoFactorProviders"][0] == "0") {
+                    bool hasTotp = false;
+                    bool hasPasskey = false;
+                    for (const auto& provider : token.value()["TwoFactorProviders"]) {
+                        if (provider == "0" || provider == 0) hasTotp = true;
+                        if (provider == "7" || provider == 7) hasPasskey = true;
+                    }
+                    if (hasTotp) {
                         state = AuthState::WaitingForTOTP;
                         return true;
-                    } else if (token.value()["TwoFactorProviders"][0] == "7") {
+                    } else if (hasPasskey) {
                         /*
                          * Passkey Support
                         */
@@ -1681,26 +1690,40 @@ namespace ClientWarden {
         std::string b64Url = b64Encode(urlVec)  + ".png";
         std::string failFile = b64Url + ".failed";
 
-        if (network.getConnectivity() == VaultConnectivity::Offline) {
+        if (storage.exists(b64Url)) {
+            return (storage.path / std::filesystem::path(b64Url)).string();
+        }
+
+        if (storage.exists(failFile) || network.getConnectivity() == VaultConnectivity::Offline) {
             return std::nullopt;
         }
 
-        if (storage.exists(failFile)) {
-            return std::nullopt;
-        }
+        static std::mutex pendingMutex;
+        static std::unordered_set<std::string> pendingDownloads;
 
-        if (!storage.exists(b64Url)) {
-            std::optional<std::vector<uint8_t>> result = network.DownloadIcon(url);
-            if (!result.has_value()) {
-                logger->error("Failed to download icon");
-                storage.write(failFile, std::vector<uint8_t>{});
+        {
+            std::lock_guard<std::mutex> lock(pendingMutex);
+            if (pendingDownloads.find(b64Url) != pendingDownloads.end()) {
                 return std::nullopt;
             }
-            storage.write(b64Url, result.value());
-            return (storage.path / std::filesystem::path(b64Url)).string();
-        } else {
-            return (storage.path / std::filesystem::path(b64Url)).string();
+            pendingDownloads.insert(b64Url);
         }
+
+        std::thread([this, url, b64Url, failFile]() {
+            try {
+                std::optional<std::vector<uint8_t>> result = network.DownloadIcon(url);
+                if (!result.has_value()) {
+                    storage.write(failFile, std::vector<uint8_t>{});
+                } else {
+                    storage.write(b64Url, result.value());
+                }
+            } catch (...) {
+            }
+            std::lock_guard<std::mutex> lock(pendingMutex);
+            pendingDownloads.erase(b64Url);
+        }).detach();
+
+        return std::nullopt;
     }
 
     std::shared_ptr<GenericItem> Vault::GetItem(std::string uuid) {

@@ -48,94 +48,112 @@
         NSMutableArray<ItemElement*>* items = [NSMutableArray array];
 
         for (auto& cipher : ciphers) {
-            NSUUID* uuid = [[NSUUID alloc] initWithUUIDString:[NSString stringWithUTF8String: cipher.second.c_str()]];
+            try {
+                NSUUID* uuid = [[NSUUID alloc] initWithUUIDString:[NSString stringWithUTF8String: cipher.second.c_str()]];
+                if (!uuid) {
+                    uuid = [NSUUID UUID];
+                }
 
-            std::string c_name;
+                std::string c_name;
+                try {
+                    v_inst.GetItem(cipher.second)
+                         ->GetName(c_name)
+                         ->Close();
+                } catch (...) {
+                    c_name = "Untitled Item";
+                }
 
-            v_inst.GetItem(cipher.second)
-                 ->GetName(c_name)
-                 ->Close();
+                NSString* name = [NSString stringWithUTF8String: c_name.c_str()];
+                if (!name) {
+                    name = [NSString stringWithCString:c_name.c_str() encoding:NSISOLatin1StringEncoding] ?: @"Item";
+                }
 
-            NSString* name = [NSString stringWithUTF8String: c_name.c_str()];
+                ClientwardenImage* img = nil;
 
-            ClientwardenImage* img = nil;
+                if (cipher.first == ClientWarden::CipherType::Login) {
+                    std::vector<std::string> loginUrl;
 
-            if (cipher.first == ClientWarden::CipherType::Login) {
-                std::vector<std::string> loginUrl;
+                    try {
+                        v_inst.GetItem<ClientWarden::LoginItem>(cipher.second)
+                             ->GetWebsites(loginUrl)
+                             ->Close();
+                    } catch (...) {
+                    }
 
-                v_inst.GetItem<ClientWarden::LoginItem>(cipher.second)
-                     ->GetWebsites(loginUrl)
-                     ->Close();
+                    if (loginUrl.size() != 0) {
+                        std::optional<std::string> result = v_inst.DownloadIcon(loginUrl[0]);
+                        if (result.has_value()) {
+                            NSString* path = [NSString stringWithUTF8String: result.value().c_str()];
 
-                if (loginUrl.size() != 0) {
-                    std::optional<std::string> result = v_inst.DownloadIcon(loginUrl[0]);
-                    if (result.has_value()) {
-                        NSString* path = [NSString stringWithUTF8String: result.value().c_str()];
-
-                        img = [[ClientwardenImage alloc] initWithType:ImageTypeAppSupport path:path];
+                            img = [[ClientwardenImage alloc] initWithType:ImageTypeAppSupport path:path];
+                        } else {
+                            img = [[ClientwardenImage alloc] initWithType:ImageTypeSystemImage path:@"globe"];
+                        }
                     } else {
                         img = [[ClientwardenImage alloc] initWithType:ImageTypeSystemImage path:@"globe"];
                     }
+
+                    for (auto& uri : loginUrl) {
+                        OPENSSL_cleanse(uri.data(), uri.size());
+                        uri.clear();
+                    }
+                } else if (cipher.first == ClientWarden::CipherType::Card) {
+                    img = [[ClientwardenImage alloc] initWithType:ImageTypeSystemImage path:@"creditcard"];
+                } else if (cipher.first == ClientWarden::CipherType::Identity) {
+                    img = [[ClientwardenImage alloc] initWithType:ImageTypeSystemImage path:@"person.text.rectangle"];
+                } else if (cipher.first == ClientWarden::CipherType::Note) {
+                    img = [[ClientwardenImage alloc] initWithType:ImageTypeSystemImage path:@"pad.header"];
+                } else if (cipher.first == ClientWarden::CipherType::SSHKey) {
+                    img = [[ClientwardenImage alloc] initWithType:ImageTypeSystemImage path:@"key.viewfinder"];
+                } else if (cipher.first == ClientWarden::CipherType::BankAccount) {
+                    img = [[ClientwardenImage alloc] initWithType:ImageTypeSystemImage path:@"dollarsign.circle"];
+                } else if (cipher.first == ClientWarden::CipherType::DriversLicense) {
+                    img = [[ClientwardenImage alloc] initWithType:ImageTypeSystemImage path:@"licenseplate"];
+                } else if (cipher.first == ClientWarden::CipherType::Passport) {
+                    img = [[ClientwardenImage alloc] initWithType:ImageTypeSystemImage path:@"list.bullet.rectangle.portrait"];
                 } else {
-                    img = [[ClientwardenImage alloc] initWithType:ImageTypeSystemImage path:@"globe"];
+                    img = [[ClientwardenImage alloc] initWithType:ImageTypeSystemImage path:@"questionmark.app.dashed"];
                 }
 
-                for (auto& uri : loginUrl) {
-                    OPENSSL_cleanse(uri.data(), uri.size());
-                    uri.clear();
+                ItemType i_type;
+                switch (cipher.first) {
+                    case ClientWarden::CipherType::Login:
+                        i_type = ItemTypeLogin;
+                        break;
+                    case ClientWarden::CipherType::Card:
+                        i_type = ItemTypeCard;
+                        break;
+                    case ClientWarden::CipherType::Identity:
+                        i_type = ItemTypeIdentity;
+                        break;
+                    case ClientWarden::CipherType::Note:
+                        i_type = ItemTypeNote;
+                        break;
+                    case ClientWarden::CipherType::SSHKey:
+                        i_type = ItemTypeSSHKey;
+                        break;
+                    case ClientWarden::CipherType::BankAccount:
+                        i_type = ItemTypeBankAccount;
+                        break;
+                    case ClientWarden::CipherType::DriversLicense:
+                        i_type = ItemTypeDriversLicense;
+                        break;
+                    case ClientWarden::CipherType::Passport:
+                        i_type = ItemTypePassport;
+                        break;
+                    default:
+                        i_type = ItemTypeNote;
+                        break;
                 }
-            } else if (cipher.first == ClientWarden::CipherType::Card) {
-                img = [[ClientwardenImage alloc] initWithType:ImageTypeSystemImage path:@"creditcard"];
-            } else if (cipher.first == ClientWarden::CipherType::Identity) {
-                img = [[ClientwardenImage alloc] initWithType:ImageTypeSystemImage path:@"person.text.rectangle"];
-            } else if (cipher.first == ClientWarden::CipherType::Note) {
-                img = [[ClientwardenImage alloc] initWithType:ImageTypeSystemImage path:@"pad.header"];
-            } else if (cipher.first == ClientWarden::CipherType::SSHKey) {
-                img = [[ClientwardenImage alloc] initWithType:ImageTypeSystemImage path:@"key.viewfinder"];
-            } else if (cipher.first == ClientWarden::CipherType::BankAccount) {
-                img = [[ClientwardenImage alloc] initWithType:ImageTypeSystemImage path:@"dollarsign.circle"];
-            } else if (cipher.first == ClientWarden::CipherType::DriversLicense) {
-                img = [[ClientwardenImage alloc] initWithType:ImageTypeSystemImage path:@"licenseplate"];
-            } else if (cipher.first == ClientWarden::CipherType::Passport) {
-                img = [[ClientwardenImage alloc] initWithType:ImageTypeSystemImage path:@"list.bullet.rectangle.portrait"];
-            } else {
-                img = [[ClientwardenImage alloc] initWithType:ImageTypeSystemImage path:@"questionmark.app.dashed"];
+
+                ItemElement* element = [[ItemElement alloc] initWithName:name uuid:uuid type:i_type image:img];
+
+                [items addObject:element];
+            } catch (const std::exception& e) {
+                spdlog::error("Error processing item {}: {}", cipher.second, e.what());
+            } catch (...) {
+                spdlog::error("Unknown error processing item {}", cipher.second);
             }
-
-            ItemType i_type;
-            switch (cipher.first) {
-                case ClientWarden::CipherType::Login:
-                    i_type = ItemTypeLogin;
-                    break;
-                case ClientWarden::CipherType::Card:
-                    i_type = ItemTypeCard;
-                    break;
-                case ClientWarden::CipherType::Identity:
-                    i_type = ItemTypeIdentity;
-                    break;
-                case ClientWarden::CipherType::Note:
-                    i_type = ItemTypeNote;
-                    break;
-                case ClientWarden::CipherType::SSHKey:
-                    i_type = ItemTypeSSHKey;
-                    break;
-                case ClientWarden::CipherType::BankAccount:
-                    i_type = ItemTypeBankAccount;
-                    break;
-                case ClientWarden::CipherType::DriversLicense:
-                    i_type = ItemTypeDriversLicense;
-                    break;
-                case ClientWarden::CipherType::Passport:
-                    i_type = ItemTypePassport;
-                    break;
-                default:
-                    i_type = ItemTypeNote;
-                    break;
-            }
-
-            ItemElement* element = [[ItemElement alloc] initWithName:name uuid:uuid type:i_type image:img];
-
-            [items addObject:element];
         }
 
         return items;

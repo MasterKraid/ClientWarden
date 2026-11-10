@@ -197,7 +197,10 @@ namespace ClientWarden {
             {"Authorization", "Bearer " + accessString}
         };
         
-        auto res = apiClient->Get("/api/accounts/profile", headers);
+        auto res = apiClient->Get("/accounts/profile", headers);
+        if (!res || res->status == 404) {
+            res = apiClient->Get("/api/accounts/profile", headers);
+        }
         return res && res->status != 401;
     }
 
@@ -211,7 +214,13 @@ namespace ClientWarden {
             {"Authorization", "Bearer " + accessString}
         };
         
-        auto res = apiClient->Get("/api/accounts/profile", headers);
+        auto res = apiClient->Get("/accounts/profile", headers);
+        if (!res || res->status == 404) {
+            res = apiClient->Get("/api/accounts/profile", headers);
+        }
+        if (!res || res->status == 404) {
+            res = vaultClient->Get("/api/accounts/profile", headers);
+        }
 
         if (!res) {
             logger->error("getProfile request failed");
@@ -936,7 +945,13 @@ namespace ClientWarden {
             return std::nullopt;
         }
 
-        auto res = apiClient->Get("/api/config");
+        auto res = apiClient->Get("/config");
+        if (!res || res->status == 404) {
+            res = apiClient->Get("/api/config");
+        }
+        if (!res || res->status == 404) {
+            res = vaultClient->Get("/api/config");
+        }
 
         if (!res) {
             logger->error("getVersion request failed");
